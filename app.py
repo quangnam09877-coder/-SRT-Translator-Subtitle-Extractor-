@@ -4,6 +4,12 @@ import os
 import threading
 import sys
 import webbrowser
+import time
+import srt
+import subprocess
+import shutil
+import requests
+from pathlib import Path
 
 # Import from existing translation module
 from gemini_srt_translate import translate_text, translate_srt
@@ -41,6 +47,7 @@ class SRTTranslatorGUI:
         self.whisper_output = tk.StringVar()
         self.local_model_path = tk.StringVar(value="")
         self.whisper_device = tk.StringVar(value="auto")
+        self.selected_model = tk.StringVar(value="Select a model...")
         
         # Control flags
         self.stop_extraction = False
@@ -405,7 +412,7 @@ class SRTTranslatorGUI:
         model_frame = ttk.LabelFrame(whisper_main, text="Configuration", padding="15")
         model_frame.pack(fill=tk.X, pady=(0, 20))
         
-        # First row: Device and Language
+        # First row: Device and Model Selection
         config_row1 = ttk.Frame(model_frame)
         config_row1.pack(fill=tk.X, pady=(0, 12))
         
@@ -415,6 +422,21 @@ class SRTTranslatorGUI:
         device_combo.pack(side=tk.LEFT, padx=(12, 30))
         self.setup_combobox_font(device_combo, 18)
         self.disable_combobox_mousewheel(device_combo, canvas)
+        
+        ttk.Label(config_row1, text="Model:", style='Section.TLabel').pack(side=tk.LEFT)
+        model_combo = ttk.Combobox(config_row1, textvariable=self.selected_model, state="readonly")
+        model_combo['values'] = [
+            "Select a model...",
+            "tiny", "tiny.en", 
+            "base", "base.en",
+            "small", "small.en",
+            "medium", "medium.en",
+            "large-v1", "large-v2", "large-v3"
+        ]
+        model_combo.pack(side=tk.LEFT, padx=(12, 0))
+        self.setup_combobox_font(model_combo, 18)
+        self.disable_combobox_mousewheel(model_combo, canvas)
+        model_combo.bind("<<ComboboxSelected>>", self.on_model_selected)
         
         # Local Model Path
         ttk.Label(model_frame, text="Local Model Path:", style='Section.TLabel').pack(anchor=tk.W, pady=(12, 8))
@@ -561,17 +583,243 @@ class SRTTranslatorGUI:
             return "download"
         else:  # Cancel
             return "cancel"
+    
+    def on_model_selected(self, event):
+        """Handle model selection from dropdown"""
+        selected_model = self.selected_model.get()
+        if selected_model != "Select a model...":
+            result = messagebox.askyesno(
+                "Download Model",
+                f"Do you want to download the '{selected_model}' model?\n\n"
+                f"The model will be downloaded to:\n{os.path.join(os.getcwd(), 'Models', selected_model)}\n\n"
+                "This may take several minutes depending on model size.",
+                icon="question"
+            )
+            
+            if result:
+                self.download_model(selected_model)
+            else:
+                # Reset selection if user cancels
+                self.selected_model.set("Select a model...")
+    
+    def download_model(self, model_name):
+        """Download the selected Whisper model"""
+        self.stop_download = False
+        self.whisper_log_message(f"Starting download of {model_name} model...")
+        
+        # Disable buttons during download
+        self.extract_btn.config(state="disabled")
+        
+        # Run download in separate thread
+        threading.Thread(target=self._download_model_thread, args=(model_name,), daemon=True).start()
+    
+    def _download_model_thread(self, model_name):
+        """Download model in separate thread"""
+        try:
+            # Create Models directory if it doesn't exist
+            models_dir = os.path.join(os.getcwd(), "Models")
+            if not os.path.exists(models_dir):
+                os.makedirs(models_dir)
+                self.whisper_log_message(f"Created Models directory: {models_dir}")
+            
+            model_path = os.path.join(models_dir, model_name)
+            
+            # Check if model already exists
+            if os.path.exists(model_path) and os.listdir(model_path):
+                self.whisper_log_message(f"Model {model_name} already exists at {model_path}")
+                self.local_model_path.set(model_path)
+                self.whisper_log_message("✅ Model path set successfully!")
+                return
+            
+            self.whisper_log_message(f"Downloading {model_name} from Hugging Face...")
+            self.whisper_log_message("This may take a few minutes depending on your internet connection...")
+            
+            # Use huggingface_hub to download the model
+            try:
+                from huggingface_hub import snapshot_download
+                from tqdm import tqdm
+                import sys
+                
+                # Map model names to repository names
+                model_repos = {
+                    "tiny": "Systran/faster-whisper-tiny",
+                    "tiny.en": "Systran/faster-whisper-tiny.en", 
+                    "base": "Systran/faster-whisper-base",
+                    "base.en": "Systran/faster-whisper-base.en",
+                    "small": "Systran/faster-whisper-small",
+                    "small.en": "Systran/faster-whisper-small.en",
+                    "medium": "Systran/faster-whisper-medium",
+                    "medium.en": "Systran/faster-whisper-medium.en",
+                    "large-v1": "Systran/faster-whisper-large-v1",
+                    "large-v2": "Systran/faster-whisper-large-v2",
+                    "large-v3": "Systran/faster-whisper-large-v3"
+                }
+                
+                repo_id = model_repos.get(model_name)
+                if not repo_id:
+                    raise ValueError(f"Unknown model: {model_name}")
+                
+                # Create a custom progress callback
+                def progress_callback(progress_info):
+                    if hasattr(progress_info, 'desc') and hasattr(progress_info, 'n') and hasattr(progress_info, 'total'):
+                        if progress_info.total and progress_info.total > 0:
+                            percent = int((progress_info.n / progress_info.total) * 100)
+                            # Format file size
+                            def format_bytes(bytes_val):
+                                if bytes_val < 1024:
+                                    return f"{bytes_val}B"
+                                elif bytes_val < 1024**2:
+                                    return f"{bytes_val/1024:.1f}kB"
+                                elif bytes_val < 1024**3:
+                                    return f"{bytes_val/(1024**2):.1f}MB"
+                                else:
+                                    return f"{bytes_val/(1024**3):.2f}GB"
+                            
+                            current_size = format_bytes(progress_info.n)
+                            total_size = format_bytes(progress_info.total)
+                            
+                            # Calculate download speed
+                            elapsed = getattr(progress_info, 'elapsed', 0)
+                            if elapsed > 0:
+                                speed = progress_info.n / elapsed
+                                speed_str = f"{format_bytes(speed)}/s"
+                            else:
+                                speed_str = "calculating..."
+                            
+                            status_msg = f"{progress_info.desc}: {percent}% | {current_size}/{total_size} [{speed_str}]"
+                            self.whisper_log_message(status_msg)
+                
+                # Redirect stdout to capture tqdm progress
+                class ProgressCapture:
+                    def __init__(self, log_func):
+                        self.log_func = log_func
+                        self.buffer = ""
+                        self.last_update = 0
+                        import time
+                        self.start_time = time.time()
+                    
+                    def write(self, text):
+                        self.buffer += text
+                        # Process complete lines
+                        while '\r' in self.buffer or '\n' in self.buffer:
+                            if '\r' in self.buffer:
+                                line, self.buffer = self.buffer.split('\r', 1)
+                            else:
+                                line, self.buffer = self.buffer.split('\n', 1)
+                            
+                            if line.strip():
+                                # Filter and format progress messages
+                                if any(keyword in line for keyword in ['%|', 'MB/s', 'kB/s', 'GB/s', 'Fetching', 'files:', 'model.bin:', 'tokenizer.json:', 'config.json:']):
+                                    # Clean up the progress line
+                                    clean_line = line.strip()
+                                    # Remove ANSI escape codes
+                                    import re
+                                    clean_line = re.sub(r'\x1b\[[0-9;]*m', '', clean_line)
+                                    # Remove excessive whitespace
+                                    clean_line = re.sub(r'\s+', ' ', clean_line)
+                                    
+                                    if clean_line:
+                                        # Throttle updates to avoid log spam
+                                        import time
+                                        current_time = time.time()
+                                        if current_time - self.last_update > 1.0:  # Update every second
+                                            self.log_func(f"📥 {clean_line}")
+                                            self.last_update = current_time
+                    
+                    def flush(self):
+                        pass
+                
+                # Create progress capture
+                progress_capture = ProgressCapture(self.whisper_log_message)
+                old_stdout = sys.stdout
+                old_stderr = sys.stderr
+                
+                try:
+                    # Redirect stdout and stderr to capture progress
+                    sys.stdout = progress_capture
+                    sys.stderr = progress_capture
+                    
+                    # Download the model
+                    downloaded_path = snapshot_download(
+                        repo_id=repo_id,
+                        local_dir=model_path,
+                        local_dir_use_symlinks=False,
+                        tqdm_class=tqdm  # Use tqdm for progress display
+                    )
+                finally:
+                    # Restore stdout and stderr
+                    sys.stdout = old_stdout
+                    sys.stderr = old_stderr
+                
+                self.whisper_log_message(f"✅ Model {model_name} downloaded successfully!")
+                self.whisper_log_message(f"Model saved to: {model_path}")
+                
+                # Set the local model path
+                self.local_model_path.set(model_path)
+                self.whisper_log_message("Model path updated automatically.")
+                
+                messagebox.showinfo(
+                    "Download Complete", 
+                    f"Model '{model_name}' has been downloaded successfully!\n\nPath: {model_path}"
+                )
+                
+            except ImportError as ie:
+                # Check if it's missing huggingface_hub or tqdm
+                if "huggingface_hub" in str(ie):
+                    # Fallback: Install huggingface_hub if not available
+                    self.whisper_log_message("Installing huggingface_hub...")
+                    subprocess.check_call([sys.executable, "-m", "pip", "install", "huggingface_hub"])
+                    self.whisper_log_message("huggingface_hub installed. Please try downloading again.")
+                    messagebox.showinfo("Installation", "Required dependency installed. Please try downloading the model again.")
+                elif "tqdm" in str(ie):
+                    # Install tqdm for progress display
+                    self.whisper_log_message("Installing tqdm for progress display...")
+                    subprocess.check_call([sys.executable, "-m", "pip", "install", "tqdm"])
+                    self.whisper_log_message("tqdm installed. Please try downloading again.")
+                    messagebox.showinfo("Installation", "Progress display library installed. Please try downloading the model again.")
+                else:
+                    # Try without progress display
+                    self.whisper_log_message("Progress display not available, downloading without detailed progress...")
+                    from huggingface_hub import snapshot_download
+                    downloaded_path = snapshot_download(
+                        repo_id=repo_id,
+                        local_dir=model_path,
+                        local_dir_use_symlinks=False
+                    )
+                
+        except Exception as e:
+            error_msg = f"Error downloading model {model_name}: {str(e)}"
+            self.whisper_log_message(f"❌ {error_msg}")
+            messagebox.showerror("Download Error", error_msg)
+        finally:
+            # Re-enable buttons
+            self.extract_btn.config(state="normal")
+            self.stop_download = False
             
     def show_model_help(self):
         """Show help information about local models"""
         help_text = """Local Whisper Model Help:
 
-1. Download faster-whisper models from Hugging Face:
-    https://huggingface.co/collections/Systran/faster-whisper-6867ecec0e757ee14896e2d3
-    
-2. Available models:
-   - tiny, base, small: Fast but less accurate
-   - medium, large: Slower but more accurate"""
+Two ways to get models:
+
+1. Automatic Download (Recommended):
+   - Use the "Model" dropdown to select a model
+   - Click on a model name to download it automatically
+   - Models will be saved to the "Models" folder
+   - Path will be set automatically after download
+
+2. Manual Download:
+   - Download from: https://huggingface.co/collections/Systran/faster-whisper-6867ecec0e757ee14896e2d3
+   - Extract to a folder and browse to select it
+   
+Available models:
+- tiny/tiny.en: ~39MB, fastest but least accurate
+- base/base.en: ~74MB, good balance of speed/accuracy  
+- small/small.en: ~244MB, better accuracy
+- medium/medium.en: ~769MB, high accuracy
+- large-v1/v2/v3: ~1550MB, best accuracy but slowest
+
+English-specific models (*.en) are optimized for English only."""
 
         # Create help window
         help_window = tk.Toplevel(self.root)
