@@ -97,6 +97,30 @@ class SRTTranslatorGUI:
         """Configure combobox with large font for both display and dropdown"""
         combo.configure(font=('Segoe UI', font_size))
         
+    def disable_combobox_mousewheel(self, combo, target_canvas=None):
+        """Disable combobox internal mouse wheel and redirect to page scrolling"""
+        def _on_combobox_mousewheel(event):
+            # Block combobox's internal scroll behavior and let page scroll instead
+            if target_canvas and isinstance(target_canvas, tk.Canvas):
+                # Scroll the specified canvas instead of the combobox
+                target_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            else:
+                # Find the parent canvas to scroll the page
+                parent = event.widget
+                while parent and not isinstance(parent, tk.Canvas):
+                    parent = parent.master
+                
+                if parent and isinstance(parent, tk.Canvas):
+                    # Scroll the canvas instead of the combobox
+                    parent.yview_scroll(int(-1*(event.delta/120)), "units")
+            
+            return "break"  # Stop the event from reaching combobox
+        
+        # Permanently bind mouse wheel to redirect to page scrolling
+        combo.bind("<MouseWheel>", _on_combobox_mousewheel)
+        combo.bind("<Button-4>", _on_combobox_mousewheel)  # Linux mouse wheel up
+        combo.bind("<Button-5>", _on_combobox_mousewheel)  # Linux mouse wheel down
+        
     def setup_additional_styles(self):
         """Setup additional styles for enhanced appearance"""
         style = ttk.Style()
@@ -237,6 +261,7 @@ class SRTTranslatorGUI:
         model_combo['values'] = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-pro", "gemini-1.5-flash"]
         model_combo.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=(0, 10), padx=(15, 0))
         self.setup_combobox_font(model_combo, 18)
+        self.disable_combobox_mousewheel(model_combo, canvas)
         
         # Proxy settings
         ttk.Label(api_frame, text="Proxy:", style='Section.TLabel').grid(row=2, column=0, sticky=tk.W, pady=(10, 0))
@@ -271,6 +296,7 @@ class SRTTranslatorGUI:
         lang_combo['values'] = ["Chinese", "English", "Japanese", "Korean", "Spanish", "French", "German", "Italian", "Portuguese", "Russian"]
         lang_combo.grid(row=2, column=1, sticky=(tk.W, tk.E), pady=(10, 0), padx=(15, 0))
         self.setup_combobox_font(lang_combo, 18)
+        self.disable_combobox_mousewheel(lang_combo, canvas)
         
         # Action buttons - cleaner design
         button_frame = ttk.Frame(main_frame)
@@ -388,6 +414,7 @@ class SRTTranslatorGUI:
         device_combo['values'] = ["cpu", "cuda", "auto"]
         device_combo.pack(side=tk.LEFT, padx=(12, 30))
         self.setup_combobox_font(device_combo, 18)
+        self.disable_combobox_mousewheel(device_combo, canvas)
         
         # Local Model Path
         ttk.Label(model_frame, text="Local Model Path:", style='Section.TLabel').pack(anchor=tk.W, pady=(12, 8))
@@ -434,16 +461,14 @@ class SRTTranslatorGUI:
                                                    bg='#f8f9fa', relief='flat', borderwidth=1)
         self.whisper_log.pack(fill='both', expand=True)
         
-        # 为log区域绑定独立的滚轮事件，优先级更高
         def _on_log_mousewheel(event):
             self.whisper_log.yview_scroll(int(-1*(event.delta/120)), "units")
-            return "break"  # 阻止事件冒泡到父容器
+            return "break" 
         
         def _bind_log_mousewheel(event):
             self.whisper_log.bind_all("<MouseWheel>", _on_log_mousewheel)
         
         def _unbind_log_mousewheel(event):
-            # 恢复画布的滚轮事件
             def canvas_mousewheel(e):
                 canvas.yview_scroll(int(-1*(e.delta/120)), "units")
             self.whisper_log.bind_all("<MouseWheel>", canvas_mousewheel)
