@@ -59,7 +59,7 @@ class SRTTranslatorGUI:
         self.font_color = tk.StringVar(value="ffffff")  # Default white
         self.font_outline_color = tk.StringVar(value="000000")  # Default black
         self.font_outline_width = tk.StringVar(value="1")
-        self.font_name = tk.StringVar(value="Arial")
+        self.font_name = tk.StringVar(value="Microsoft YaHei")
         self.font_bold = tk.BooleanVar(value=False)
         self.font_italic = tk.BooleanVar(value=False)
         
@@ -601,7 +601,7 @@ class SRTTranslatorGUI:
         ttk.Label(font_row1, text="Font:", style='Section.TLabel').pack(side=tk.LEFT)
         font_combo = ttk.Combobox(font_row1, textvariable=self.font_name, width=15)
         font_combo['values'] = ["Arial", "Times New Roman", "Verdana", "Georgia", "Courier New", 
-                               "Trebuchet MS", "Comic Sans MS", "Impact", "Lucida Console"]
+                               "Trebuchet MS", "Comic Sans MS", "Impact", "Lucida Console", "Microsoft YaHei", "SimSun"]
         font_combo.pack(side=tk.LEFT, padx=(10, 20))
         self.setup_combobox_font(font_combo, 16)
         self.disable_combobox_mousewheel(font_combo, canvas)
