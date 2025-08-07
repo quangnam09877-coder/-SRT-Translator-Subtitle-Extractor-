@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext
+from tkinter import ttk, filedialog, messagebox, scrolledtext, colorchooser
 import os
 import threading
 import sys
@@ -49,10 +49,37 @@ class SRTTranslatorGUI:
         self.whisper_device = tk.StringVar(value="auto")
         self.selected_model = tk.StringVar(value="Select a model...")
         
+        # Merge Variables
+        self.merge_video_file = tk.StringVar()
+        self.merge_srt_file = tk.StringVar()
+        self.merge_output_file = tk.StringVar()
+        
+        # Font settings for merge
+        self.font_size = tk.StringVar(value="16")
+        self.font_color = tk.StringVar(value="ffffff")  # Default white
+        self.font_outline_color = tk.StringVar(value="000000")  # Default black
+        self.font_outline_width = tk.StringVar(value="1")
+        self.font_name = tk.StringVar(value="Arial")
+        self.font_bold = tk.BooleanVar(value=False)
+        self.font_italic = tk.BooleanVar(value=False)
+        
+        # Position settings for merge
+        self.subtitle_position = tk.StringVar(value="bottom")
+        self.margin_vertical = tk.StringVar(value="25")
+        self.margin_horizontal = tk.StringVar(value="20")
+        
+        # Advanced settings for merge
+        self.video_codec = tk.StringVar(value="libx264")
+        self.audio_codec = tk.StringVar(value="aac")
+        self.video_quality = tk.StringVar(value="23")
+        self.subtitle_encoding = tk.StringVar(value="utf-8")
+        
         # Control flags
         self.stop_extraction = False
         self.stop_translation = False
         self.stop_download = False
+        self.is_merging = False
+        self.merge_process = None
         
         self.setup_styles()
         self.setup_additional_styles()
@@ -185,6 +212,11 @@ class SRTTranslatorGUI:
         whisper_frame = ttk.Frame(notebook)
         notebook.add(whisper_frame, text="🎤 Extraction")
         self.setup_whisper_tab(whisper_frame)
+        
+        # Video merge tab
+        merge_frame = ttk.Frame(notebook)
+        notebook.add(merge_frame, text="🎬 Video Merge")
+        self.setup_merge_tab(merge_frame)
         
         # Add status bar
         self.setup_status_bar(main_container)
@@ -497,6 +529,262 @@ class SRTTranslatorGUI:
         
         self.whisper_log.bind('<Enter>', _bind_log_mousewheel)
         self.whisper_log.bind('<Leave>', _unbind_log_mousewheel)
+        
+        # Pack canvas and scrollbar
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+    def setup_merge_tab(self, parent):
+        """Setup the video merge tab"""
+        # Main scrollable frame
+        canvas = tk.Canvas(parent, bg='white', highlightthickness=0)
+        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        # Configure scrollable frame to expand
+        def configure_scroll_region(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            canvas_width = canvas.winfo_width()
+            canvas.itemconfig(canvas_window, width=canvas_width)
+        
+        scrollable_frame.bind("<Configure>", configure_scroll_region)
+        
+        canvas_window = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        def configure_canvas(event):
+            canvas.itemconfig(canvas_window, width=event.width)
+        canvas.bind("<Configure>", configure_canvas)
+        
+        # Bind mouse wheel
+        self.bind_mousewheel(canvas)
+        
+        # Main container
+        merge_main = ttk.Frame(scrollable_frame, style='Card.TFrame')
+        merge_main.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        # Title
+        title_label = ttk.Label(merge_main, text="Video Subtitle Merge", style='Title.TLabel')
+        title_label.pack(fill=tk.X, pady=(0, 30))
+        
+        # Files Section
+        files_section = ttk.LabelFrame(merge_main, text="Input Files", padding="15")
+        files_section.pack(fill=tk.X, pady=(0, 20))
+        files_section.columnconfigure(1, weight=1)
+        
+        # Video file
+        ttk.Label(files_section, text="Video File:", style='Section.TLabel').grid(row=0, column=0, sticky=tk.W, pady=(0, 10))
+        merge_video_entry = ttk.Entry(files_section, textvariable=self.merge_video_file, font=('Consolas', 16))
+        merge_video_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=(0, 10), padx=(15, 10))
+        ttk.Button(files_section, text="Browse", command=self.browse_merge_video_file, style='Small.TButton').grid(row=0, column=2, pady=(0, 10))
+        
+        # SRT file
+        ttk.Label(files_section, text="Subtitle File:", style='Section.TLabel').grid(row=1, column=0, sticky=tk.W, pady=(0, 10))
+        merge_srt_entry = ttk.Entry(files_section, textvariable=self.merge_srt_file, font=('Consolas', 16))
+        merge_srt_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=(0, 10), padx=(15, 10))
+        ttk.Button(files_section, text="Browse", command=self.browse_merge_srt_file, style='Small.TButton').grid(row=1, column=2, pady=(0, 10))
+        
+        # Output file
+        ttk.Label(files_section, text="Output File:", style='Section.TLabel').grid(row=2, column=0, sticky=tk.W, pady=(0, 10))
+        merge_output_entry = ttk.Entry(files_section, textvariable=self.merge_output_file, font=('Consolas', 16))
+        merge_output_entry.grid(row=2, column=1, sticky=(tk.W, tk.E), pady=(0, 10), padx=(15, 10))
+        ttk.Button(files_section, text="Save As", command=self.browse_merge_output_file, style='Small.TButton').grid(row=2, column=2, pady=(0, 10))
+        
+        # Font Settings Section
+        font_section = ttk.LabelFrame(merge_main, text="Font Settings", padding="15")
+        font_section.pack(fill=tk.X, pady=(0, 20))
+        
+        # Font basic settings row
+        font_row1 = ttk.Frame(font_section)
+        font_row1.pack(fill=tk.X, pady=(0, 12))
+        
+        ttk.Label(font_row1, text="Font:", style='Section.TLabel').pack(side=tk.LEFT)
+        font_combo = ttk.Combobox(font_row1, textvariable=self.font_name, width=15)
+        font_combo['values'] = ["Arial", "Times New Roman", "Verdana", "Georgia", "Courier New", 
+                               "Trebuchet MS", "Comic Sans MS", "Impact", "Lucida Console"]
+        font_combo.pack(side=tk.LEFT, padx=(10, 20))
+        self.setup_combobox_font(font_combo, 16)
+        self.disable_combobox_mousewheel(font_combo, canvas)
+        
+        ttk.Label(font_row1, text="Size:", style='Section.TLabel').pack(side=tk.LEFT)
+        size_spin = ttk.Spinbox(font_row1, textvariable=self.font_size, from_=8, to=100, width=8, 
+                               font=('Consolas', 16))
+        size_spin.pack(side=tk.LEFT, padx=(10, 20))
+        
+        ttk.Checkbutton(font_row1, text="Bold", variable=self.font_bold, style='Large.TCheckbutton').pack(side=tk.LEFT, padx=(0, 15))
+        ttk.Checkbutton(font_row1, text="Italic", variable=self.font_italic, style='Large.TCheckbutton').pack(side=tk.LEFT)
+        
+        # Color settings row
+        color_row = ttk.Frame(font_section)
+        color_row.pack(fill=tk.X, pady=(0, 12))
+        
+        ttk.Label(color_row, text="Font Color:", style='Section.TLabel').pack(side=tk.LEFT)
+        self.font_color_btn = ttk.Button(color_row, text="■", command=self.choose_merge_font_color, width=5)
+        self.font_color_btn.pack(side=tk.LEFT, padx=(10, 10))
+        self.font_color_label = ttk.Label(color_row, text=f"#{self.font_color.get()}", font=('Consolas', 16))
+        self.font_color_label.pack(side=tk.LEFT, padx=(0, 20))
+        
+        ttk.Label(color_row, text="Outline Color:", style='Section.TLabel').pack(side=tk.LEFT)
+        self.outline_color_btn = ttk.Button(color_row, text="■", command=self.choose_merge_outline_color, width=5)
+        self.outline_color_btn.pack(side=tk.LEFT, padx=(10, 10))
+        self.outline_color_label = ttk.Label(color_row, text=f"#{self.font_outline_color.get()}", font=('Consolas', 16))
+        self.outline_color_label.pack(side=tk.LEFT, padx=(0, 20))
+        
+        ttk.Label(color_row, text="Outline Width:", style='Section.TLabel').pack(side=tk.LEFT)
+        outline_spin = ttk.Spinbox(color_row, textvariable=self.font_outline_width, from_=0, to=10, width=8, font=('Consolas', 16))
+        outline_spin.pack(side=tk.LEFT, padx=(10, 0))
+        
+        # Position settings row
+        position_row = ttk.Frame(font_section)
+        position_row.pack(fill=tk.X, pady=(0, 12))
+        
+        ttk.Label(position_row, text="Position:", style='Section.TLabel').pack(side=tk.LEFT)
+        pos_combo = ttk.Combobox(position_row, textvariable=self.subtitle_position, width=12)
+        pos_combo['values'] = ["bottom", "top", "center"]
+        pos_combo.pack(side=tk.LEFT, padx=(10, 20))
+        self.setup_combobox_font(pos_combo, 16)
+        self.disable_combobox_mousewheel(pos_combo, canvas)
+        
+        ttk.Label(position_row, text="V-Margin:", style='Section.TLabel').pack(side=tk.LEFT)
+        v_margin_spin = ttk.Spinbox(position_row, textvariable=self.margin_vertical, from_=0, to=200, width=8, font=('Consolas', 16))
+        v_margin_spin.pack(side=tk.LEFT, padx=(10, 20))
+        
+        ttk.Label(position_row, text="H-Margin:", style='Section.TLabel').pack(side=tk.LEFT)
+        h_margin_spin = ttk.Spinbox(position_row, textvariable=self.margin_horizontal, from_=0, to=200, width=8, font=('Consolas', 16))
+        h_margin_spin.pack(side=tk.LEFT, padx=(10, 0))
+        
+        # Font Preview Section
+        preview_section = ttk.LabelFrame(font_section, text="Font Preview", padding="10")
+        preview_section.pack(fill=tk.X, pady=(12, 0))
+        
+        # Preview controls row
+        preview_controls = ttk.Frame(preview_section)
+        preview_controls.pack(fill=tk.X, pady=(0, 8))
+        
+        ttk.Label(preview_controls, text="Preview Text:", style='Section.TLabel').pack(side=tk.LEFT)
+        self.preview_text = tk.StringVar(value="Sample subtitle text 字幕预览")
+        preview_entry = ttk.Entry(preview_controls, textvariable=self.preview_text, font=('Consolas', 14), width=25)
+        preview_entry.pack(side=tk.LEFT, padx=(10, 10))
+        
+        ttk.Button(preview_controls, text="🔄 Update Preview", command=self.update_font_preview, style='Small.TButton').pack(side=tk.LEFT)
+        
+        # Preview display area
+        self.font_preview_canvas = tk.Canvas(
+            preview_section, 
+            bg='white',
+            height=80, 
+            highlightthickness=0
+        )
+        self.font_preview_canvas.pack(fill=tk.X, expand=True, pady=(8, 0))
+        
+        # Bind changes to auto-update preview
+        self.font_name.trace_add('write', lambda *args: self.update_font_preview())
+        self.font_size.trace_add('write', lambda *args: self.update_font_preview())
+        self.font_bold.trace_add('write', lambda *args: self.update_font_preview())
+        self.font_italic.trace_add('write', lambda *args: self.update_font_preview())
+        self.font_color.trace_add('write', lambda *args: self.update_font_preview())
+        self.preview_text.trace_add('write', lambda *args: self.update_font_preview())
+        self.font_outline_color.trace_add('write', lambda *args: self.update_font_preview())
+        self.font_outline_width.trace_add('write', lambda *args: self.update_font_preview())
+        
+        # Advanced Settings Section
+        advanced_section = ttk.LabelFrame(merge_main, text="Advanced Settings", padding="15")
+        advanced_section.pack(fill=tk.X, pady=(0, 20))
+        
+        # Codec settings row
+        codec_row = ttk.Frame(advanced_section)
+        codec_row.pack(fill=tk.X, pady=(0, 12))
+        
+        ttk.Label(codec_row, text="Video Codec:", style='Section.TLabel').pack(side=tk.LEFT)
+        video_codec_combo = ttk.Combobox(codec_row, textvariable=self.video_codec, width=12)
+        video_codec_combo['values'] = ["libx264", "libx265", "libvpx-vp9", "copy"]
+        video_codec_combo.pack(side=tk.LEFT, padx=(10, 20))
+        self.setup_combobox_font(video_codec_combo, 16)
+        self.disable_combobox_mousewheel(video_codec_combo, canvas)
+        
+        ttk.Label(codec_row, text="Audio Codec:", style='Section.TLabel').pack(side=tk.LEFT)
+        audio_codec_combo = ttk.Combobox(codec_row, textvariable=self.audio_codec, width=12)
+        audio_codec_combo['values'] = ["aac", "mp3", "copy"]
+        audio_codec_combo.pack(side=tk.LEFT, padx=(10, 20))
+        self.setup_combobox_font(audio_codec_combo, 16)
+        self.disable_combobox_mousewheel(audio_codec_combo, canvas)
+        
+        ttk.Label(codec_row, text="Quality (CRF):", style='Section.TLabel').pack(side=tk.LEFT)
+        quality_spin = ttk.Spinbox(codec_row, textvariable=self.video_quality, from_=0, to=51, width=8, font=('Consolas', 16))
+        quality_spin.pack(side=tk.LEFT, padx=(10, 0))
+        
+        # Encoding settings row
+        encoding_row = ttk.Frame(advanced_section)
+        encoding_row.pack(fill=tk.X)
+        
+        ttk.Label(encoding_row, text="Subtitle Encoding:", style='Section.TLabel').pack(side=tk.LEFT)
+        encoding_combo = ttk.Combobox(encoding_row, textvariable=self.subtitle_encoding, width=12)
+        encoding_combo['values'] = ["utf-8", "gbk", "gb2312", "big5"]
+        encoding_combo.pack(side=tk.LEFT, padx=(10, 0))
+        self.setup_combobox_font(encoding_combo, 16)
+        self.disable_combobox_mousewheel(encoding_combo, canvas)
+        
+        # Action buttons
+        button_frame = ttk.Frame(merge_main)
+        button_frame.pack(fill=tk.X, pady=25)
+        
+        self.merge_btn = ttk.Button(button_frame, text="🚀 Start Merge", 
+                                   command=self.start_merge, style='Action.TButton')
+        self.merge_btn.pack(side=tk.LEFT, padx=(0, 15))
+        
+        self.stop_merge_btn = ttk.Button(button_frame, text="⏹️ Stop", 
+                                        command=self.stop_merge, 
+                                        state="disabled", style='Stop.TButton')
+        self.stop_merge_btn.pack(side=tk.LEFT)
+        
+        # Progress section
+        progress_frame = ttk.LabelFrame(merge_main, text="Progress", padding="15")
+        progress_frame.pack(fill=tk.X, pady=(0, 20))
+        
+        self.merge_progress = ttk.Progressbar(progress_frame, mode='indeterminate')
+        self.merge_progress.pack(fill=tk.X, pady=(0, 10))
+        
+        # self.progress_label = ttk.Label(progress_frame, text="Ready to merge", 
+        #                         style='Info.TLabel', anchor='w', justify=tk.LEFT,
+        #                         font=('Consolas', 16)) 
+        self.progress_label = ttk.Label(
+            progress_frame, 
+            text="Ready to merge", 
+            style='Info.TLabel', 
+            anchor='w',
+            justify=tk.LEFT, 
+            font=('Consolas', 14)
+        )
+        self.progress_label.pack(fill=tk.X, expand=True)
+        
+        def configure_progress_label_wrap(event):
+            width = event.width
+            self.progress_label.config(wraplength=max(width - 20, 1))
+        progress_frame.bind('<Configure>', configure_progress_label_wrap)
+        
+        # Log section
+        log_frame = ttk.LabelFrame(merge_main, text="Processing Log", padding="15")
+        log_frame.pack(fill='both', expand=True, pady=(0, 15))
+        
+        self.merge_log = scrolledtext.ScrolledText(log_frame, height=12, 
+                                                  font=('Consolas', 16), wrap=tk.WORD,
+                                                  bg='#f8f9fa', relief='flat', borderwidth=1)
+        self.merge_log.pack(fill='both', expand=True)
+        
+        def _on_merge_log_mousewheel(event):
+            self.merge_log.yview_scroll(int(-1*(event.delta/120)), "units")
+            return "break"
+        
+        def _bind_merge_log_mousewheel(event):
+            self.merge_log.bind_all("<MouseWheel>", _on_merge_log_mousewheel)
+        
+        def _unbind_merge_log_mousewheel(event):
+            def canvas_mousewheel(e):
+                canvas.yview_scroll(int(-1*(e.delta/120)), "units")
+            self.merge_log.bind_all("<MouseWheel>", canvas_mousewheel)
+        
+        self.merge_log.bind('<Enter>', _bind_merge_log_mousewheel)
+        self.merge_log.bind('<Leave>', _unbind_merge_log_mousewheel)
         
         # Pack canvas and scrollbar
         canvas.pack(side="left", fill="both", expand=True)
@@ -1075,6 +1363,328 @@ English-specific models (*.en) are optimized for English only."""
         
         # Run translation in new thread
         threading.Thread(target=self.translate_srt_file, daemon=True).start()
+    
+    # Merge tab methods
+    def browse_merge_video_file(self):
+        """Browse for merge video file"""
+        filename = filedialog.askopenfilename(
+            title="Select Video File",
+            filetypes=[("Video files", "*.mp4 *.avi *.mkv *.mov *.wmv *.flv *.webm"), ("All files", "*.*")]
+        )
+        if filename:
+            self.merge_video_file.set(filename)
+            self.status_var.set(f"Video selected: {os.path.basename(filename)}")
+            # Auto-set output filename
+            if not self.merge_output_file.get():
+                base_name = os.path.splitext(filename)[0]
+                self.merge_output_file.set(f"{base_name}_with_subtitles.mp4")
+    
+    def browse_merge_srt_file(self):
+        """Browse for merge SRT file"""
+        filename = filedialog.askopenfilename(
+            title="Select SRT File",
+            filetypes=[("SRT files", "*.srt"), ("All files", "*.*")]
+        )
+        if filename:
+            self.merge_srt_file.set(filename)
+            self.status_var.set(f"Subtitle selected: {os.path.basename(filename)}")
+    
+    def browse_merge_output_file(self):
+        """Browse for merge output file"""
+        filename = filedialog.asksaveasfilename(
+            title="Save Output Video",
+            defaultextension=".mp4",
+            filetypes=[("MP4 files", "*.mp4"), ("All files", "*.*")]
+        )
+        if filename:
+            self.merge_output_file.set(filename)
+            self.status_var.set(f"Output set: {os.path.basename(filename)}")
+    
+    def choose_merge_font_color(self):
+        """Choose font color for merge"""
+        color = colorchooser.askcolor(title="Choose Font Color")
+        if color[1]:  # color[1] is hex color like '#ffffff'
+            hex_color = color[1].lstrip('#')  # Remove # to get 'ffffff'
+            self.font_color.set(hex_color)
+            self.font_color_label.config(text=color[1])  # Show with # for display
+    
+    def choose_merge_outline_color(self):
+        """Choose outline color for merge"""
+        color = colorchooser.askcolor(title="Choose Outline Color")
+        if color[1]:  # color[1] is hex color like '#000000'
+            hex_color = color[1].lstrip('#')  # Remove # to get '000000'
+            self.font_outline_color.set(hex_color)
+            self.outline_color_label.config(text=color[1])  # Show with # for display
+    
+    def update_font_preview(self):
+        """在 Canvas 上更新字体预览，包括描边效果"""
+        try:
+            # 1. 获取所有需要的设置
+            font_name = self.font_name.get() or 'Arial'
+            font_size = int(self.font_size.get() or 15)
+            is_bold = self.font_bold.get()
+            is_italic = self.font_italic.get()
+            preview_text = self.preview_text.get() or 'Sample subtitle text 字幕预览'
+            
+            # 获取主颜色和描边颜色，并确保它们是 Tkinter 可用的格式 (e.g., '#ffffff')
+            font_color_hex = f"#{self.font_color.get() or 'ffffff'}"
+            outline_color_hex = f"#{self.font_outline_color.get() or '000000'}"
+            
+            # 获取描边宽度
+            outline_width = int(self.font_outline_width.get() or 0)
+
+            # 2. 准备字体
+            weight = 'bold' if is_bold else 'normal'
+            slant = 'italic' if is_italic else 'roman'
+            preview_font = (font_name, font_size, weight, slant)
+
+            # 3. 在 Canvas 上绘制
+            canvas = self.font_preview_canvas
+            # 清空上一次的绘制内容
+            canvas.delete("all")
+            
+            # 获取 Canvas 的中心点坐标
+            # 我们需要等待 Canvas 实际显示出来才能获取准确宽高，但这里可以先获取配置值
+            canvas.update_idletasks() # 确保获取最新的尺寸信息
+            width = canvas.winfo_width()
+            height = canvas.winfo_height()
+            center_x, center_y = width / 2, height / 2
+
+            # 4. 绘制描边 (如果宽度大于0)
+            if outline_width > 0:
+                # 在8个方向上绘制描边文字，形成一个较粗的轮廓
+                for dx in [-outline_width, 0, outline_width]:
+                    for dy in [-outline_width, 0, outline_width]:
+                        if dx == 0 and dy == 0:
+                            continue # 跳过中心点
+                        canvas.create_text(
+                            center_x + dx, center_y + dy,
+                            text=preview_text,
+                            font=preview_font,
+                            fill=outline_color_hex, # 使用描边颜色
+                            anchor=tk.CENTER
+                        )
+
+            # 5. 最后在顶部绘制主颜色的文字
+            canvas.create_text(
+                center_x, center_y,
+                text=preview_text,
+                font=preview_font,
+                fill=font_color_hex, # 使用主体颜色
+                anchor=tk.CENTER
+            )
+            
+        except Exception as e:
+            # 在预览出错时，可以打印错误信息帮助调试
+            # print(f"Error updating font preview: {e}")
+            pass
+    
+    def merge_log_message(self, message):
+        """Add message to merge log"""
+        self.merge_log.insert(tk.END, f"{message}\n")
+        self.merge_log.see(tk.END)
+        
+        # Only update status bar for non-error messages
+        if not any(keyword in message.lower() for keyword in ['error', 'failed', 'unable', 'invalid', 'cannot']):
+            # Update status bar only for progress or success messages
+            if any(keyword in message.lower() for keyword in ['starting', 'completed', 'processing', 'merge']):
+                self.status_var.set("Processing video merge...")
+        
+        self.root.update()
+    
+    def build_ffmpeg_command(self):
+        """Build FFmpeg command for merging"""
+        if not self.merge_video_file.get() or not self.merge_srt_file.get() or not self.merge_output_file.get():
+            raise ValueError("Please select all required files")
+        
+        # Normalize file paths to handle Windows paths and special characters
+        video_path = os.path.normpath(self.merge_video_file.get())
+        srt_path = os.path.normpath(self.merge_srt_file.get())
+        output_path = os.path.normpath(self.merge_output_file.get())
+        
+        # Convert Windows paths to forward slashes for FFmpeg
+        if os.name == 'nt':  # Windows
+            video_path = video_path.replace('\\', '/')
+            srt_path = srt_path.replace('\\', '/')
+            srt_path = srt_path.replace(':', '\\:')
+            output_path = output_path.replace('\\', '/')
+        
+        # Build subtitle filter
+        font_style = []
+        
+        # Font family and size
+        font_style.append(f"FontName={self.font_name.get()}")
+        font_style.append(f"FontSize={self.font_size.get()}")
+        
+        # Colors (convert hex to ASS BGR format)
+        if self.font_color.get():
+            font_color_hex = self.font_color.get().lstrip('#')
+            if len(font_color_hex) == 6:  # Valid hex color
+                # Convert RGB to BGR for ASS format
+                r = font_color_hex[0:2]
+                g = font_color_hex[2:4] 
+                b = font_color_hex[4:6]
+                bgr_color = f"{b}{g}{r}"  # Convert to BGR
+                font_style.append(f"PrimaryColour=&H{bgr_color}")
+        
+        if self.font_outline_color.get():
+            outline_color_hex = self.font_outline_color.get().lstrip('#')
+            if len(outline_color_hex) == 6:  # Valid hex color
+                # Convert RGB to BGR for ASS format
+                r = outline_color_hex[0:2]
+                g = outline_color_hex[2:4]
+                b = outline_color_hex[4:6]
+                bgr_color = f"{b}{g}{r}"  # Convert to BGR
+                font_style.append(f"OutlineColour=&H{bgr_color}")
+        
+        font_style.append(f"Outline={self.font_outline_width.get()}")
+        
+        # Bold and Italic
+        if self.font_bold.get():
+            font_style.append("Bold=1")
+        if self.font_italic.get():
+            font_style.append("Italic=1")
+        
+        # Position
+        if self.subtitle_position.get() == "top":
+            font_style.append(f"MarginV={self.margin_vertical.get()}")
+            font_style.append("Alignment=8")  # Top center
+        elif self.subtitle_position.get() == "center":
+            font_style.append("Alignment=5")  # Middle center
+        else:  # bottom
+            font_style.append(f"MarginV={self.margin_vertical.get()}")
+            font_style.append("Alignment=2")  # Bottom center
+        
+        font_style.append(f"MarginL={self.margin_horizontal.get()}")
+        font_style.append(f"MarginR={self.margin_horizontal.get()}")
+        
+        style_string = ",".join(font_style)
+        
+        # Build FFmpeg command with proper escaping
+        # For Windows paths with colons, use single quotes to wrap the entire path
+        subtitles_filter = f"subtitles='{srt_path}':force_style='{style_string}'"
+        
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-vf", subtitles_filter,
+            "-c:v", self.video_codec.get(),
+            "-c:a", self.audio_codec.get()
+        ]
+        
+        # Add CRF if using x264 or x265
+        if self.video_codec.get() in ["libx264", "libx265"]:
+            cmd.extend(["-crf", self.video_quality.get()])
+        
+        cmd.append(output_path)
+        
+        return cmd
+    
+    def start_merge(self):
+        """Start video merging process"""
+        try:
+            # Validate inputs
+            cmd = self.build_ffmpeg_command()
+            
+            # Check if FFmpeg is available
+            try:
+                subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                messagebox.showerror("Error", 
+                    "FFmpeg not found. Please install FFmpeg and add it to your PATH.\n\n"
+                    "Download from: https://ffmpeg.org/download.html")
+                return
+            
+            self.is_merging = True
+            self.merge_btn.config(state="disabled")
+            self.stop_merge_btn.config(state="normal")
+            self.merge_progress.start()
+            self.status_var.set("Starting video merge...")
+            self.merge_log_message("Starting video processing...")
+            self.merge_log_message(f"Command: {' '.join(cmd)}")
+            
+            # Run FFmpeg in separate thread
+            threading.Thread(target=self._merge_video_thread, args=(cmd,), daemon=True).start()
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Error starting merge: {str(e)}")
+    
+    def update_progress_label(self, progress_text):
+        if hasattr(self, 'progress_label'):
+            self.progress_label.config(text=progress_text)
+    
+    def _merge_video_thread(self, cmd):
+        try:
+            self.root.after(0, self.update_progress_label, "Starting FFmpeg process...")
+
+            startupinfo = None
+            if os.name == 'nt':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+            self.merge_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                encoding='utf-8',
+                errors='ignore',
+                bufsize=1,
+                startupinfo=startupinfo
+            )
+
+            for line in iter(self.merge_process.stderr.readline, ''):
+                if not self.is_merging:
+                    break 
+
+                line = line.strip()
+                if not line:
+                    continue
+
+                if line.startswith("frame=") and "time=" in line and "speed=" in line:
+                    self.root.after(0, self.update_progress_label, f"⏳ {line}")
+                else:
+                    self.root.after(0, self.merge_log_message, line)
+
+            self.merge_process.wait()
+            
+            if self.is_merging: 
+                if self.merge_process.returncode == 0:
+                    self.root.after(0, self.update_progress_label, "✅ Process completed successfully!")
+                    self.root.after(0, self.merge_log_message, "✅ Video merge completed successfully!")
+                    self.status_var.set("Merge completed successfully!")
+                    messagebox.showinfo("Success", f"Video saved to:\n{self.merge_output_file.get()}")
+                else:
+                    err_msg = f"❌ Process failed! (Return Code: {self.merge_process.returncode})"
+                    self.root.after(0, self.update_progress_label, err_msg)
+                    self.root.after(0, self.merge_log_message, f"❌ Merge failed with return code {self.merge_process.returncode}")
+                    self.status_var.set("Merge failed. Check log for details.")
+                    messagebox.showerror("Error", "Merge failed. Check the log for details.")
+
+        except Exception as e:
+            self.root.after(0, self.update_progress_label, "❌ An unexpected error occurred.")
+            self.root.after(0, self.merge_log_message, f"❌ Error during merge: {str(e)}")
+            self.status_var.set("Merge error occurred. Check log for details.")
+            messagebox.showerror("Error", f"Merge error: {str(e)}")
+        finally:
+            def final_ui_reset():
+                self.is_merging = False
+                self.merge_btn.config(state="normal")
+                self.stop_merge_btn.config(state="disabled")
+                self.merge_progress.stop()
+                self.merge_process = None
+            
+            self.root.after(0, final_ui_reset)
+    
+    def stop_merge(self):
+        """Stop video merge process"""
+        self.is_merging = False
+        if self.merge_process and self.merge_process.poll() is None:
+            self.merge_process.terminate()
+            self.merge_log_message("Merge stopped by user")
+            self.merge_btn.config(state="normal")
+            self.stop_merge_btn.config(state="disabled")
+            self.merge_progress.stop()
         
         
 def main():
