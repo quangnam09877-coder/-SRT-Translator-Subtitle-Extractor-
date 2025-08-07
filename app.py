@@ -19,7 +19,7 @@ import google.generativeai as genai
 class SRTTranslatorGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("SRT Translator & Subtitle Extractor")
+        self.root.title("Subtitle Translator & Subtitle Extractor")
         self.root.geometry("1000x1100")
         self.root.minsize(800, 800)
         
@@ -215,7 +215,7 @@ class SRTTranslatorGUI:
         
         # Video merge tab
         merge_frame = ttk.Frame(notebook)
-        notebook.add(merge_frame, text="🎬 Video Merge")
+        notebook.add(merge_frame, text="🎬 Video Subtitle Merge")
         self.setup_merge_tab(merge_frame)
         
         # Add status bar
@@ -282,7 +282,7 @@ class SRTTranslatorGUI:
         main_frame.pack(fill='both', expand=True, padx=10, pady=10)
         
         # Title - cleaner design
-        title_label = ttk.Label(main_frame, text="SRT Translation", style='Title.TLabel')
+        title_label = ttk.Label(main_frame, text="Subtitle Translation", style='Title.TLabel')
         title_label.pack(fill=tk.X, pady=(0, 40))
         
         # API Configuration Section - full width
@@ -318,13 +318,13 @@ class SRTTranslatorGUI:
         file_frame.columnconfigure(1, weight=1)  # Make column 1 expandable
         
         # Input file
-        ttk.Label(file_frame, text="Input SRT:", style='Section.TLabel').grid(row=0, column=0, sticky=tk.W, pady=(0, 10))
+        ttk.Label(file_frame, text="Input Subtitle File:", style='Section.TLabel').grid(row=0, column=0, sticky=tk.W, pady=(0, 10))
         input_entry = ttk.Entry(file_frame, textvariable=self.input_file, font=('Consolas', 18))
         input_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=(0, 10), padx=(15, 10))
         ttk.Button(file_frame, text="Browse", command=self.browse_input_file, style='Small.TButton').grid(row=0, column=2, pady=(0, 10))
         
         # Output file
-        ttk.Label(file_frame, text="Output SRT:", style='Section.TLabel').grid(row=1, column=0, sticky=tk.W, pady=(0, 10))
+        ttk.Label(file_frame, text="Output Subtitle File:", style='Section.TLabel').grid(row=1, column=0, sticky=tk.W, pady=(0, 10))
         output_entry = ttk.Entry(file_frame, textvariable=self.output_file, font=('Consolas', 18))
         output_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=(0, 10), padx=(15, 10))
         ttk.Button(file_frame, text="Save As", command=self.browse_output_file, style='Small.TButton').grid(row=1, column=2, pady=(0, 10))
@@ -433,9 +433,9 @@ class SRTTranslatorGUI:
         video_entry = ttk.Entry(io_frame, textvariable=self.video_file, font=('Consolas', 18))
         video_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=(0, 10), padx=(15, 10))
         ttk.Button(io_frame, text="Browse", command=self.browse_video_file, style='Small.TButton').grid(row=0, column=2, pady=(0, 10))
-        
-        # Output SRT
-        ttk.Label(io_frame, text="Output SRT:", style='Section.TLabel').grid(row=1, column=0, sticky=tk.W, pady=(0, 10))
+
+        # Output Subtitle
+        ttk.Label(io_frame, text="Output Subtitle File:", style='Section.TLabel').grid(row=1, column=0, sticky=tk.W, pady=(0, 10))
         whisper_output_entry = ttk.Entry(io_frame, textvariable=self.whisper_output, font=('Consolas', 18))
         whisper_output_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=(0, 10), padx=(15, 10))
         ttk.Button(io_frame, text="Save As", command=self.browse_whisper_output, style='Small.TButton').grid(row=1, column=2, pady=(0, 10))
