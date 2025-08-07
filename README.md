@@ -1,6 +1,6 @@
 # SRT 翻译器 & 字幕提取器
 
-一个多合一字幕处理工具，集成了AI翻译、语音识别字幕提取和视频字幕合并功能。（韩娱人看不懂生肉且难以忍受机翻的崩溃产物...）
+一个多合一字幕处理工具，集成了AI翻译、语音识别字幕提取和视频字幕合并功能。（韩娱人看不懂生肉且难以忍受机翻的崩溃产物...经尝试，gemini的翻译质量基本能保证语义通顺，但是遇到具体的人名等会有一定问题，对于时间轴以及字幕细节修改可以结合subeasy.ai平台！）
 
 ![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
 ![Tkinter](https://img.shields.io/badge/GUI-Tkinter-green.svg)
@@ -107,7 +107,7 @@ python app.py
    - 设置输出视频路径
 
 2. **字体设置**
-   - 字体族：Arial, Times New Roman 等
+   - 字体族：Microsoft YaHei, Arial, Times New Roman 等
    - 大小、粗体、斜体选项
    - 字体颜色和轮廓颜色选择
    - **实时预览**：查看字体效果
