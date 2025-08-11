@@ -27,7 +27,7 @@ jobs:
 
       - name: Build exe with icon and custom name
         run: |
-          pyinstaller --onefile --noconsole --icon=icon.ico --name "SRT-Translator" app.py
+          pyinstaller --onefile --noconsole --icon=wondicon-ui-free-language_111234.ico --name "SRT-Translator" app.py
           dir dist
 
       - name: Upload artifact
