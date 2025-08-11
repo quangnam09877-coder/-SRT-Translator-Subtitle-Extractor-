@@ -332,7 +332,7 @@ class SRTTranslatorGUI:
         # Target language
         ttk.Label(file_frame, text="Target Language:", style='Section.TLabel').grid(row=2, column=0, sticky=tk.W, pady=(10, 0))
         lang_combo = ttk.Combobox(file_frame, textvariable=self.target_lang)
-        lang_combo['values'] = ["Chinese", "English", "Japanese", "Korean", "Spanish", "French", "German", "Italian", "Portuguese", "Russian"]
+        lang_combo['values'] = ["Chinese", "English", "Japanese", "Korean", "Spanish", "French", "German", "Italian", "Portuguese", "Russian",  "Vietnamese"]
         lang_combo.grid(row=2, column=1, sticky=(tk.W, tk.E), pady=(10, 0), padx=(15, 0))
         self.setup_combobox_font(lang_combo, 18)
         self.disable_combobox_mousewheel(lang_combo, canvas)
