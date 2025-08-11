@@ -1,0 +1,52 @@
+name: Build EXE (Windows)
+
+on:
+  workflow_dispatch:     # Cho phép chạy tay
+  push:
+    tags:
+      - 'v*'             # Tự build khi tạo tag v1.0.0...
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build exe with icon and custom name
+        run: |
+          pyinstaller --onefile --noconsole --icon=icon.ico --name "SRT-Translator" app.py
+          dir dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SRT-Translator
+          path: dist/SRT-Translator.exe
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: SRT-Translator
+          path: .
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "SRT-Translator.exe"
